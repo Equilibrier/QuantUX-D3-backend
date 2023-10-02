@@ -1,4 +1,4 @@
- package com.qux.rest;
+package com.qux.rest;
 
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
@@ -10,6 +10,7 @@ import com.qux.MATC;
 import com.qux.acl.InvitationACL;
 import com.qux.auth.ITokenService;
 import com.qux.blob.IBlobService;
+import com.qux.model.AppPart;
 import com.qux.model.Image;
 import com.qux.model.Model;
 import com.qux.model.User;
@@ -18,6 +19,8 @@ import com.qux.util.Mail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.qux.util.CacheService;
+import com.qux.util.Config;
 import com.qux.util.DB;
 import com.qux.util.rest.MongoREST;
 import com.qux.util.Util;
@@ -34,43 +37,40 @@ public class ImageREST extends MongoREST {
 	private long imageSize;
 
 	private final int maxUploads = 20;
-	
+
 	private final String image_db;
-	
+
 	private final Logger logger = LoggerFactory.getLogger(ImageREST.class);
-	
+
 	private final InvitationACL invACL;
-	
+
 	private final Set<String> supportedTypes;
 
 	private final IBlobService blobService;
 	
-		
-	public ImageREST(
-			ITokenService tokenService,
-			IBlobService blobService,
-			MongoClient mongo,
-			long maxImageSize
-	) {
+	private final CacheService cacheService;
+	
+	private final JsonObject config;
+
+	public ImageREST(ITokenService tokenService, IBlobService blobService, MongoClient mongo, CacheService cacheService, JsonObject config, long maxImageSize) {
 		super(tokenService, mongo, Image.class);
 		this.blobService = blobService;
 		this.imageSize = maxImageSize;
 		this.invACL = new InvitationACL(mongo);
 		this.image_db = DB.getTable(Image.class);
+		this.cacheService = cacheService;
+		this.config = config;
 		this.supportedTypes = new HashSet<>();
 		this.supportedTypes.add("jpg");
 		this.supportedTypes.add("png");
 		this.supportedTypes.add("jpeg");
 		this.supportedTypes.add("gif");
 	}
-	
 
 	/********************************************************************************************
 	 * Set Image
 	 ********************************************************************************************/
 
-	
-	
 	public Handler<RoutingContext> setImage() {
 		return new Handler<RoutingContext>() {
 			@Override
@@ -81,17 +81,18 @@ public class ImageREST extends MongoREST {
 	}
 
 	public void setImage(RoutingContext event) {
-		String id  = getId(event);
+		String id = getId(event);
 		if (this.acl != null) {
 			this.acl.canWrite(getUser(event), event, allowed -> {
 				if (allowed) {
 					setImage(event, id);
 				} else {
 					User user = getUser(event);
-					error("setImage", "User "+ getUser(event) + " tried to upload image to "+ event.request().path());
+					error("setImage", "User " + getUser(event) + " tried to upload image to " + event.request().path());
 					this.getACLList(user, userApps -> {
 						error("setImage", "User " + user + " can read: " + userApps);
-						Mail.error(event, "ImageRest.setImage() > User "+ getUser(event)+ " tried to CREATE without permission. User Apps: " + userApps);
+						Mail.error(event, "ImageRest.setImage() > User " + getUser(event)
+								+ " tried to CREATE without permission. User Apps: " + userApps);
 					});
 					returnError(event, 405);
 				}
@@ -100,20 +101,19 @@ public class ImageREST extends MongoREST {
 			this.setImage(event, id);
 		}
 	}
-	
+
 	public void setImage(RoutingContext event, String appID) {
 		logger.debug("setImage() > " + appID);
 
-
 		Set<FileUpload> files = event.fileUploads();
-		
+
 		ArrayList<ImageFileUpload> toUpload = new ArrayList<>();
 		ArrayList<FileUpload> toDelete = new ArrayList<>();
 		ArrayList<String> errors = new ArrayList<>();
-		
-		if (files.size() <=  this.maxUploads){
-			for (FileUpload file : files){
-				if(checkImage(file)){
+
+		if (files.size() <= this.maxUploads) {
+			for (FileUpload file : files) {
+				if (checkImage(file)) {
 					toUpload.add(new ImageFileUpload(file));
 				} else {
 					toDelete.add(file);
@@ -121,12 +121,12 @@ public class ImageREST extends MongoREST {
 					errors.add(file.fileName());
 				}
 			}
-		}  else {
+		} else {
 			error("setImage", "Too many uploads!");
 			toDelete.addAll(files);
 			logger.error("setImage() > Too many uploads");
 		}
-		
+
 		logger.debug("setImage() > " + toUpload.size() + " > " + toDelete.size());
 
 		/**
@@ -138,21 +138,44 @@ public class ImageREST extends MongoREST {
 		/**
 		 * make folder if not exists
 		 */
-		String folder = this.blobService.createFolder(event, appID);
-
-		/**
-		 * read meta data async to have with and height
-		 */
-		this.addImageMetaData (event, toUpload, metaResult -> {
-			/**
-			 * now start moving and deleting files
-			 */
-			copyFiles(event, appID, folder, metaResult, errors, new ArrayList<>());
+		// cosmin
+		cacheService.getProjectMeta(appID, (projectMeta, exc) -> {
+			
+			if (exc == null) {
+				if (projectMeta != null) {
+					String folder_ = "";
+					if (projectMeta.getBoolean("is_d3_mvvm")) {
+						String repoName = projectMeta.getString("mvvm_repo_name");
+	
+						folder_ = this.blobService.createMvvmRuntimesFolders(event,
+								new String[] { repoName, "static_images" });
+					}
+					else {
+						folder_ = this.blobService.createSubImageFolder(event, appID);
+					}
+					final String folder = folder_;
+					/**
+					 * read meta data async to have with and height
+					 */
+					this.addImageMetaData(event, toUpload, metaResult -> {
+						/**
+						 * now start moving and deleting files
+						 */
+						copyFiles(event, appID, folder, metaResult, errors, new ArrayList<>());
+					});
+				} else {
+					error("setImage", exc.getMessage());
+					toDelete.addAll(files);
+					logger.error("setImage() > Too many uploads");
+				}
+			} else {
+				returnError(event, 404);
+			}
 		});
 	}
 
-
-	private void addImageMetaData (RoutingContext event, List<ImageFileUpload> uploads, Handler<List<ImageFileUpload>> handler) {
+	private void addImageMetaData(RoutingContext event, List<ImageFileUpload> uploads,
+			Handler<List<ImageFileUpload>> handler) {
 		logger.error("addImageMetaData > enter");
 		event.vertx().executeBlocking(promise -> {
 			for (ImageFileUpload file : uploads) {
@@ -167,11 +190,10 @@ public class ImageREST extends MongoREST {
 				logger.error("addImageMetaData > Could not process images in bus");
 				returnError(event, "image.processing.error");
 			}
-		} );
+		});
 	}
 
-
-	private void addWidthAndHeight (ImageFileUpload image) {
+	private void addWidthAndHeight(ImageFileUpload image) {
 		String filename = image.uploadedFileName();
 		BufferedImage bufferedImage = Util.getImage(filename);
 		if (bufferedImage != null) {
@@ -182,33 +204,25 @@ public class ImageREST extends MongoREST {
 		}
 	}
 
+	private void copyFiles(RoutingContext event, String appID, String folder, List<ImageFileUpload> uploads,
+			List<String> errors, List<Image> result) {
 
-	private void copyFiles(
-			RoutingContext event,
-			String appID,
-			String folder,
-			List<ImageFileUpload> uploads,
-			List<String> errors,
-			List<Image> result
-	){
-		
 		logger.debug("copyFiles() > " + uploads.size());
 		User user = getUser(event);
-		
-		if (uploads.size() > 0){
+
+		if (uploads.size() > 0) {
 			/**
-			 * If there are more files to copy
-			 * run another recurson. Do this until list
-			 * is empty
+			 * If there are more files to copy run another recurson. Do this until list is
+			 * empty
 			 */
-			
+
 			ImageFileUpload file = uploads.remove(0);
-					
+
 			String type = Util.getFileType(file.fileName());
 			String imageID = Util.getRandomString();
 			String image = imageID + "." + type;
-			String dest = folder +"/" +  image;
-			
+			String dest = folder + "/" + image;
+
 			logger.debug("copyFiles() > move " + file.fileName());
 
 			this.blobService.setBlob(event, file.uploadedFileName(), dest, blobResult -> {
@@ -236,39 +250,38 @@ public class ImageREST extends MongoREST {
 
 		} else {
 			/**
-			 * No more files to copy, we start deleting the temp files
-			 * and save the results in mongo
+			 * No more files to copy, we start deleting the temp files and save the results
+			 * in mongo
 			 */
-			saveImages(event, result, new ArrayList<Image>(), errors, appID );
+			saveImages(event, result, new ArrayList<Image>(), errors, appID);
 		}
 	}
 
-
-	
-	protected void saveImages(RoutingContext event, List<Image> uploads, List<Image> saved, List<String> errors, String appID){
+	protected void saveImages(RoutingContext event, List<Image> uploads, List<Image> saved, List<String> errors,
+			String appID) {
 		logger.debug("saveImages() > " + uploads.size());
-		if (uploads.size() > 0){
+		if (uploads.size() > 0) {
 			Image img = uploads.remove(0);
-			mongo.save(image_db, mapper.toVertx(img), res->{
-				if(res.succeeded()){
+			mongo.save(image_db, mapper.toVertx(img), res -> {
+				if (res.succeeded()) {
 					img.setId(res.result());
 					saved.add(img);
 				} else {
-					logger.error("saveImages() > Could not save in mongo " + img.getUrl()); 
+					logger.error("saveImages() > Could not save in mongo " + img.getUrl());
 				}
-				// call recursive  until list is empty
+				// call recursive until list is empty
 				saveImages(event, uploads, saved, errors, appID);
 			});
 		} else {
 			this.onImageUploadDone(event, saved, errors, appID);
 		}
 	}
-	
-	protected void onImageUploadDone(RoutingContext event, List<Image> uploads, List<String> errors, String appID){
+
+	protected void onImageUploadDone(RoutingContext event, List<Image> uploads, List<String> errors, String appID) {
 		logger.info("onImageUploadDone() > uploads: " + uploads.size() + " >  errors: " + errors.size());
 
 		JsonArray images = new JsonArray();
-		for (Image img : uploads){
+		for (Image img : uploads) {
 			JsonObject i = mapper.toVertx(img);
 			i.put("id", img.getId());
 			images.add(i);
@@ -280,10 +293,9 @@ public class ImageREST extends MongoREST {
 		/**
 		 * assemble final response;
 		 */
-		JsonObject result = new JsonObject()
-			.put("uploads", images);
+		JsonObject result = new JsonObject().put("uploads", images);
 
-		if (errors.size() > 0){
+		if (errors.size() > 0) {
 			result.put("errors", new JsonArray(errors));
 		}
 		returnJson(event, result);
@@ -291,8 +303,8 @@ public class ImageREST extends MongoREST {
 
 	private boolean checkImage(FileUpload file) {
 		String type = Util.getFileType(file.fileName());
-		if (supportedTypes.contains(type)){
-			if(file.size() > this.imageSize){
+		if (supportedTypes.contains(type)) {
+			if (file.size() > this.imageSize) {
 				logger.error("checkImage() > Toooo biggg " + file.size());
 			}
 			return file.size() < this.imageSize;
@@ -313,26 +325,24 @@ public class ImageREST extends MongoREST {
 			}
 		};
 	}
-	
 
 	public void getInvitationImage(RoutingContext event) {
-		this.invACL.canTest(getUser(event), event, res ->{
-			if(res){
-				String appID  = event.request().getParam("appID");
+		this.invACL.canTest(getUser(event), event, res -> {
+			if (res) {
+				String appID = event.request().getParam("appID");
 				String image = event.request().getParam("image");
 				getImage(event, appID, image);
 			} else {
-				logger.error("getInvitationImage() > " + getUser(event) + " tried to read the image " +event.request().path() );
+				logger.error("getInvitationImage() > " + getUser(event) + " tried to read the image "
+						+ event.request().path());
 				returnError(event, 404);
 			}
 		});
 	}
-	
-	
+
 	/********************************************************************************************
 	 * Get Image
 	 ********************************************************************************************/
-
 
 	public Handler<RoutingContext> getImage() {
 		return new Handler<RoutingContext>() {
@@ -342,10 +352,9 @@ public class ImageREST extends MongoREST {
 			}
 		};
 	}
-	
 
 	public void getImage(RoutingContext event) {
-		String id  = getId(event);
+		String id = getId(event);
 		String image = event.request().getParam("image");
 		if (this.acl != null) {
 			User user = getUser(event);
@@ -353,7 +362,7 @@ public class ImageREST extends MongoREST {
 				if (allowed) {
 					getImage(event, id, image);
 				} else {
-					logger.error("getImage() > " + user + " tried to read the image " +event.request().path() );
+					logger.error("getImage() > " + user + " tried to read the image " + event.request().path());
 					returnError(event, 404);
 				}
 			});
@@ -361,22 +370,44 @@ public class ImageREST extends MongoREST {
 			getImage(event, id, image);
 		}
 	}
-	
 
 	public void getImage(RoutingContext event, String appID, String image) {
-		this.blobService.getBlob(event, appID, image);
+		
+		cacheService.getProjectMeta(appID, (projectMeta, exc) -> {
+			
+			if (exc == null) {
+				if (projectMeta != null) {
+					if (projectMeta.getBoolean("is_d3_mvvm")) {
+						final String mvvmRuntimesPath = config.getString(Config.MVVM_RUNTIMES_FOLDER);
+						String repoName = projectMeta.getString("mvvm_repo_name");
+	
+						this.blobService.getImageBlob(event, mvvmRuntimesPath + "/" + repoName + "/static_images/" + image);
+					}
+					else {
+						this.blobService.getImageBlob(event, appID, image);						
+					}
+				}
+				else {
+					logger.error("getImage() > something was wrong, mongodb app data is null for project with app id " + appID + " for some reason, so we cannot determine if this is a mvvm-d3 project or not so that we could find out the originar place of the images");
+					returnError(event, 404);
+				}
+			}
+			else {
+				logger.error("getImage() > could not find app json from mongodb with appID " + appID + " for some reason, so we cannot determine if this is a mvvm-d3 project or not so that we could find out the originar place of the images");
+				returnError(event, 404);
+			}
+        });
 	}
-
 
 	/********************************************************************************************
 	 * Delete Image
 	 ********************************************************************************************/
 	public void delete(RoutingContext event, String id) {
-		logger.info("delete() > enter " +  id);
+		logger.info("delete() > enter " + id);
 		String imageID = event.request().getParam("imageID");
 		String fileName = event.request().getParam("file");
-		mongo.removeDocuments(table, Model.findById(imageID), res ->{
-			if(res.succeeded()){
+		mongo.removeDocuments(table, Model.findById(imageID), res -> {
+			if (res.succeeded()) {
 				returnOk(event, "image.deleted");
 				this.blobService.deleteFile(event, id, fileName, deleteResult -> {
 					logger.error("delete() > exit: " + deleteResult);
@@ -388,9 +419,4 @@ public class ImageREST extends MongoREST {
 		});
 	}
 
-
-
-
-
 }
-

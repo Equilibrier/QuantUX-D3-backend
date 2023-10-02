@@ -453,7 +453,7 @@ public class UserREST extends MongoREST {
 
 	private void setImage(RoutingContext event, String id, FileUpload file) {
 		if (checkImage(file)){
-			String userFolder = this.blobService.createFolder(event, id);
+			String userFolder = this.blobService.createSubImageFolder(event, id);
 			String imageID = System.currentTimeMillis() +"";
 			String type = Util.getFileType(file.fileName());
 			String image = imageID + "." + type;
@@ -574,7 +574,7 @@ public class UserREST extends MongoREST {
 	}
 
 	public void getImage(RoutingContext event, String userID, String image) {
-		this.blobService.getBlob(event, userID, image);
+		this.blobService.getImageBlob(event, userID, image);
 	}
 
 	public Handler<RoutingContext> retire() {

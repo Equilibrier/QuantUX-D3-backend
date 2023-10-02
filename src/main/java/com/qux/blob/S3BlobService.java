@@ -13,17 +13,26 @@ public class S3BlobService implements IBlobService {
     }
 
     @Override
-    public void copyBlob(RoutingContext event, String source, String target, Handler<Boolean> handler) {
-
-    }
+    public void copyBlob(RoutingContext event, String source, String target, Handler<Boolean> handler) {}
 
     @Override
-    public void getBlob(RoutingContext event, String folder, String file) {
-
-    }
+    public void getImageBlob(RoutingContext event, String folder, String file) {}
+    
+    @Override
+    public void getImageBlob(RoutingContext event, String fullImagePath) {}
 
     @Override
-    public String createFolder(RoutingContext event, String folder) {
+    public String createMvvmRuntimesFolders(RoutingContext event, String[] folderNames) {
+    	return null;
+    }
+    
+    @Override
+    public String createSubImageFolder(RoutingContext event, String folder) {
+        return null;
+    }
+    
+    @Override
+    public String createFolders(RoutingContext event, String[] folderNames) {
         return null;
     }
 

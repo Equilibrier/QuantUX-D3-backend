@@ -16,4 +16,7 @@ public class DB {
 		DB.prefix = prefix;
 	}
 	
+	public static String getAppTable() {
+		return DB.prefix + "_" + "app";
+	}
 }

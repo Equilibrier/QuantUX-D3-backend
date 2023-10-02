@@ -69,6 +69,8 @@ public class MATC extends AbstractVerticle {
 	private boolean isDebug = false;
 
 	private final String startedTime = LocalDateTime.now().toString();
+	
+	private CacheService cacheService;
 
 
 	public static String MAIL_USER = "";
@@ -82,6 +84,7 @@ public class MATC extends AbstractVerticle {
 
 		JsonObject config = initConfig();
 		initMongo(config);
+		initCacheService();
 
 		Router router = Router.router(vertx);
 		router.route().handler(BodyHandler.create().setMergeFormAttributes(false));
@@ -124,10 +127,14 @@ public class MATC extends AbstractVerticle {
 		System.out.println("******************************************");
 	}
 
-	private IBlobService getBlockService(String folder, JsonObject config) {
+	private void initCacheService() {
+		cacheService = new CacheService(client);
+	}
+
+	private IBlobService getBlockService(String imagesFolder, String mvvmRuntimesFolder, JsonObject config) {
 		logger.info("getConfig() > enter");
 		if (Config.isFileSystem(config)) {
-			return new FileSystemService(folder);
+			return new FileSystemService(imagesFolder, mvvmRuntimesFolder);
 		} else {
 			return new S3BlobService();
 		}
@@ -386,7 +393,7 @@ public class MATC extends AbstractVerticle {
 
 	private void initAppRest(Router router, JsonObject config) {
 
-		IBlobService blob = getBlockService(config.getString("image.folder.apps"), config);
+		IBlobService blob = getBlockService(config.getString("image.folder.apps"), config.getString("mvvm_runtimes.folder"), config);
 		
 		AppREST app = new AppREST(this.tokenService, blob, client);
 		router.route(HttpMethod.GET, "/rest/apps").handler(app.findByUser());
@@ -401,12 +408,14 @@ public class MATC extends AbstractVerticle {
 		router.route(HttpMethod.DELETE, "/rest/apps/invitation/:appID").handler(app::resetToken);
 		router.route(HttpMethod.POST, "/rest/apps/:appID/update").handler(app.applyChanges());
 
-		IBlobService blobService = getBlockService(config.getString("image.folder.apps"), config);
+		IBlobService blobService = getBlockService(config.getString("image.folder.apps"), config.getString("mvvm_runtimes.folder"), config);
 
 		ImageREST image = new ImageREST(
 				this.tokenService,
 				blobService,
 				client,
+				cacheService,
+				config,
 				config.getLong("image.size")
 		);
 		image.setACL(new AppAcl(client));
@@ -423,7 +432,7 @@ public class MATC extends AbstractVerticle {
 
 	private void initUserRest(JsonObject config, Router router) {
 
-		IBlobService blob = getBlockService(config.getString("image.folder.user"), config);
+		IBlobService blob = getBlockService(config.getString("image.folder.user"), config.getString("mvvm_runtimes.folder"), config);
 		UserREST user = new UserREST(this.tokenService, blob, client,config);
 		
 		router.route(HttpMethod.POST, "/rest/user").handler(user.create());

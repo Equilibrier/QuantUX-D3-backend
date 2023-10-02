@@ -3,8 +3,16 @@ package com.qux.blob;
 import io.vertx.core.Handler;
 import io.vertx.core.file.FileSystem;
 import io.vertx.ext.web.RoutingContext;
+
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.stream.Stream;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.qux.util.CacheService;
 
 public class FileSystemService implements IBlobService{
 
@@ -13,9 +21,11 @@ public class FileSystemService implements IBlobService{
 
 
     private final String imageFolder;
-
-    public FileSystemService(String imageFolder) {
+    private final String mvvmRuntimesFolder;
+    
+    public FileSystemService(String imageFolder, String mvvmRuntimesFolder) {
         this.imageFolder = imageFolder;
+        this.mvvmRuntimesFolder = mvvmRuntimesFolder;
     }
 
     public void setBlob(RoutingContext event, String source, String target, Handler<Boolean> handler) {
@@ -45,27 +55,50 @@ public class FileSystemService implements IBlobService{
             }
         });
     }
-
-    public void getBlob(RoutingContext event, String folder, String image) {
-        logger.info("getBlob() > enter");
-        String file = imageFolder +"/" + folder + "/" + image ;
+    
+    public void getImageBlob(RoutingContext event, String imageFullPath) {
+        logger.info("getImageBlob() > enter");
+        
         FileSystem fs = event.vertx().fileSystem();
-        fs.exists(file, exists-> {
+        fs.exists(imageFullPath, exists-> {
             if(exists.succeeded() && exists.result()){
-                logger.info("getBlob() > stream > " + file);
+            	final Path path = Paths.get(imageFullPath);
+                final int count = path.getNameCount();
+                final String tag = path.getName(count - 2).toString() + path.getName(count - 1).toString();
+                
+                logger.info("getImageBlob() > stream > " + imageFullPath);
                 event.response().putHeader("Cache-Control", "no-transform,public,max-age=86400,s-maxage=86401");
-                event.response().putHeader("ETag", folder + image);
-                event.response().sendFile(file);
+                event.response().putHeader("ETag", tag);
+                event.response().sendFile(imageFullPath);
             } else {
-                logger.info("getBlob() > not found > " + file);
+                logger.info("getImageBlob() > not found > " + imageFullPath);
                 event.response().setStatusCode(404);
                 event.response().end();
             }
         });
     }
 
-    public String createFolder(RoutingContext event, String folderName) {
-        logger.info("createFolder() > enter > " + folderName);
+    public void getImageBlob(RoutingContext event, String folder, String image) {
+    	getImageBlob(event, imageFolder +"/" + folder + "/" + image);
+    }
+    
+    public String createFolders(RoutingContext event, String[] folderNames) {
+        logger.info("createFolder() > enter > " + folderNames);
+        FileSystem fs = event.vertx().fileSystem();
+        String folder = "";
+        for (String folderName: folderNames) {
+        	folder += "/" + folderName;
+        }
+        fs.mkdirsBlocking(folder);
+        return folder;
+    }
+    
+    public String createMvvmRuntimesFolders(RoutingContext event, String[] folderNames) {
+    	return createFolders(event, Stream.concat(Stream.of(mvvmRuntimesFolder), Arrays.stream(folderNames)).toArray(String[]::new)); // just for prepending a String to an array of Strings, but I wanted to be in just one line... - @TODO could be best to do this more optimised though (maybe in an util function for this...)... 
+    }
+
+    public String createSubImageFolder(RoutingContext event, String folderName) {
+        logger.info("createSubImageFolder() > enter > " + folderName);
         FileSystem fs = event.vertx().fileSystem();
         String folder = imageFolder +"/" + folderName;
         fs.mkdirsBlocking(folder);

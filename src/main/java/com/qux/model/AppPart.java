@@ -43,6 +43,11 @@ public class AppPart extends Model {
 		 	.put("appID",appID);
 	}
 	
+	public static JsonObject appByIdQuery(String appID) {
+		return new JsonObject()
+			 	.put("_id",appID);
+	}
+	
 	public static void onUpdate(RoutingContext event, String appID) {
 		
 		JsonObject request = new JsonObject()

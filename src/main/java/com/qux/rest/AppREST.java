@@ -214,8 +214,9 @@ public class AppREST extends MongoREST {
 	
 	private void createImageFolder(RoutingContext event, JsonObject oldApp, List<JsonObject> images, JsonObject newApp){
 
+		//@TODO Cosmin: I should implement a branch in here for if project type is_mvvm and create a svn-repo static_images sub folder or otherwise this default behavior  
 		String newID = newApp.getString("_id");
-		this.blobService.createFolder(event, newID);
+		this.blobService.createSubImageFolder(event, newID);
 		copyImages(event, images, newApp);
 	}
 

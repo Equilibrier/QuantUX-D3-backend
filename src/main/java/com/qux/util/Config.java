@@ -35,6 +35,8 @@ public class Config {
     public static final String ENV_IMAGE_FOLDER_USER = "QUX_IMAGE_FOLDER_USER";
 
     public static final String ENV_IMAGE_FOLDER_APPS = "QUX_IMAGE_FOLDER_APPS";
+    
+    public static final String ENV_MVVM_RUNTIMES_FOLDER = "QUX_MVVM_RUNTIMES_FOLDER";
 
     public static final String ENV_AUTH_SERVICE = "QUX_AUTH_SERVICE";
 
@@ -86,6 +88,8 @@ public class Config {
     public static final String IMAGE_FOLDER_USER = "image.folder.user";
 
     public static final String IMAGE_FOLDER_APPS = "image.folder.apps";
+    
+    public static final String MVVM_RUNTIMES_FOLDER = "mvvm_runtimes.folder";
 
     public static final String AUTH_SERVICE = "auth.service";
 
@@ -202,6 +206,7 @@ public class Config {
         mergeHTTP(env, result);
         mergeMongo(env, result);
         mergeImage(env, result);
+        mergeMvvmRuntimes(env, result);
         mergeUser(env, result);
         return result;
 
@@ -233,6 +238,13 @@ public class Config {
         if (env.containsKey(ENV_IMAGE_FOLDER_APPS)) {
             logger.warn("mergeImage() > " + ENV_IMAGE_FOLDER_APPS);
             result.put(IMAGE_FOLDER_APPS, env.get(ENV_IMAGE_FOLDER_APPS));
+        }
+    }
+    
+    private static void mergeMvvmRuntimes(Map<String, String> env, JsonObject result) {
+    	if (env.containsKey(ENV_MVVM_RUNTIMES_FOLDER)) {
+            logger.warn("mergeMvvmRuntimes() > " + ENV_MVVM_RUNTIMES_FOLDER);
+            result.put(MVVM_RUNTIMES_FOLDER, env.get(ENV_MVVM_RUNTIMES_FOLDER));
         }
     }
 
