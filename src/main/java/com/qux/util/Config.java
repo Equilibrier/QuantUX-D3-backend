@@ -37,6 +37,11 @@ public class Config {
     public static final String ENV_IMAGE_FOLDER_APPS = "QUX_IMAGE_FOLDER_APPS";
     
     public static final String ENV_MVVM_RUNTIMES_FOLDER = "QUX_MVVM_RUNTIMES_FOLDER";
+    public static final String ENV_MVVM_DOWNLOADER_JSON = "QUX_MVVM_DOWNLOADER_JSON";
+    public static final String ENV_MVVM_APIGATEWAY_JSON = "QUX_MVVM_APIGATEWAY_JSON";
+    public static final String ENV_MVVM_DOWNLOADER_HOST = "QUX_MVVM_DOWNLOADER_HOST";
+    public static final String ENV_MVVM_APIGATEWAY_HOST = "QUX_MVVM_APIGATEWAY_HOST";
+    public static final String ENV_MVVM_APIGATEWAY_PATH = "QUX_MVVM_APIGATEWAY_PATH";
 
     public static final String ENV_AUTH_SERVICE = "QUX_AUTH_SERVICE";
 
@@ -90,6 +95,11 @@ public class Config {
     public static final String IMAGE_FOLDER_APPS = "image.folder.apps";
     
     public static final String MVVM_RUNTIMES_FOLDER = "mvvm_runtimes.folder";
+    public static final String MVVM_DOWNLOADER_JSON = "mvvm_json.downloader";
+    public static final String MVVM_APIGATEWAY_JSON = "mvvm_json.apigateway";
+    public static final String MVVM_DOWNLOADER_HOST = "mvvm_port.downloader";
+    public static final String MVVM_APIGATEWAY_HOST = "mvvm_port.apigateway";
+    public static final String MVVM_APIGATEWAY_PATH = "mvvm_path.apigateway";
 
     public static final String AUTH_SERVICE = "auth.service";
 
@@ -207,6 +217,11 @@ public class Config {
         mergeMongo(env, result);
         mergeImage(env, result);
         mergeMvvmRuntimes(env, result);
+        mergeMvvmDownloaderJson(env, result);
+        mergeMvvmApiGatewayJson(env, result);
+        mergeMvvmDownloaderHost(env, result);
+        mergeMvvmApiGatewayHost(env, result);
+        mergeMvvmApiGatewayPath(env, result);
         mergeUser(env, result);
         return result;
 
@@ -245,6 +260,36 @@ public class Config {
     	if (env.containsKey(ENV_MVVM_RUNTIMES_FOLDER)) {
             logger.warn("mergeMvvmRuntimes() > " + ENV_MVVM_RUNTIMES_FOLDER);
             result.put(MVVM_RUNTIMES_FOLDER, env.get(ENV_MVVM_RUNTIMES_FOLDER));
+        }
+    }
+    private static void mergeMvvmDownloaderJson(Map<String, String> env, JsonObject result) {
+    	if (env.containsKey(ENV_MVVM_DOWNLOADER_JSON)) {
+            logger.warn("mergeMvvmDownloaderJson() > " + ENV_MVVM_DOWNLOADER_JSON);
+            result.put(MVVM_DOWNLOADER_JSON, env.get(ENV_MVVM_DOWNLOADER_JSON));
+        }
+    }
+    private static void mergeMvvmApiGatewayJson(Map<String, String> env, JsonObject result) {
+    	if (env.containsKey(ENV_MVVM_APIGATEWAY_JSON)) {
+            logger.warn("mergeMvvmApiGatewayJson() > " + ENV_MVVM_APIGATEWAY_JSON);
+            result.put(MVVM_APIGATEWAY_JSON, env.get(ENV_MVVM_APIGATEWAY_JSON));
+        }
+    }
+    private static void mergeMvvmDownloaderHost(Map<String, String> env, JsonObject result) {
+    	if (env.containsKey(ENV_MVVM_DOWNLOADER_HOST)) {
+            logger.warn("mergeMvvmDownloaderHost() > " + ENV_MVVM_DOWNLOADER_HOST);
+            result.put(MVVM_DOWNLOADER_HOST, env.get(ENV_MVVM_DOWNLOADER_HOST));
+        }
+    }
+    private static void mergeMvvmApiGatewayHost(Map<String, String> env, JsonObject result) {
+    	if (env.containsKey(ENV_MVVM_APIGATEWAY_HOST)) {
+            logger.warn("mergeMvvmApiGatewayPort() > " + ENV_MVVM_APIGATEWAY_HOST);
+            result.put(MVVM_APIGATEWAY_HOST, env.get(ENV_MVVM_APIGATEWAY_HOST));
+        }
+    }
+    private static void mergeMvvmApiGatewayPath(Map<String, String> env, JsonObject result) {
+    	if (env.containsKey(ENV_MVVM_APIGATEWAY_PATH)) {
+            logger.warn("mergeMvvmApiGatewayPath() > " + ENV_MVVM_APIGATEWAY_PATH);
+            result.put(MVVM_APIGATEWAY_PATH, env.get(ENV_MVVM_APIGATEWAY_PATH));
         }
     }
 

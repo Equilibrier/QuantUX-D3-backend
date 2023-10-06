@@ -10,10 +10,16 @@
     </File>             
   </appenders>
 
-  <loggers>     
+<loggers>  
+    <Logger name="io.vertx.ext.web.client" level="DEBUG">
+        <AppenderRef ref="Console"/>
+    </Logger>
+    <Logger name="io.vertx.core.http.impl" level="DEBUG">
+        <AppenderRef ref="Console"/>
+    </Logger> 
     <root level="debug">
       <appender-ref ref="Console" level="debug"/>
       <appender-ref ref="MyFile" level="error"/>
     </root>    
-  </loggers>
+</loggers>
 </configuration>

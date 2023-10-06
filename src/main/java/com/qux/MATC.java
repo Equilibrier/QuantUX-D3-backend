@@ -1,6 +1,13 @@
 package com.qux;
 
+import java.io.IOException;
+import java.net.http.HttpRequest;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import com.qux.auth.ITokenService;
 import com.qux.auth.KeyCloakTokenService;
@@ -8,6 +15,7 @@ import com.qux.blob.FileSystemService;
 import com.qux.blob.IBlobService;
 import com.qux.blob.S3BlobService;
 import com.qux.util.*;
+import com.qux.util.rest.MvvmServersInfoProvider;
 import com.qux.auth.QUXTokenService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,9 +48,25 @@ import com.qux.rest.UserREST;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
+import io.vertx.core.MultiMap;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.http.HttpServerRequest;
+
+/*import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientRequest;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.http.HttpServerRequest;*/
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.mail.MailClient;
 import io.vertx.ext.mail.MailConfig;
@@ -76,6 +100,64 @@ public class MATC extends AbstractVerticle {
 	public static String MAIL_USER = "";
 
 	private ITokenService tokenService;
+	
+	private MvvmServersInfoProvider mvvmServersInfoProvider;
+	
+	//@FunctionalInterface
+	public interface HttpResponseSender {
+		public void sendHttpResponse(int status, String body);
+	}
+	
+	public interface Redirector {
+		public void redirect(String url, String method, Buffer requestBody, MultiMap requestHeaders, MATC.HttpResponseSender responseSenderClbk);
+	}
+	
+	private HttpClient reverseProxyClient = HttpClient.newHttpClient();
+	private static final Set<String> REVERSE_PROXY_EXCLUDED_HEADERS = Set.of("host", "connection", "x-forwarded-for");
+	private static final Map<String, HttpRequest.Builder> MVVM_DOWNLOADER_REQUEST_BUILDER_TEMPLATES = new HashMap<>();
+	
+	private Redirector redirector = new Redirector() {
+		
+    	public void redirect(String url, String method, Buffer requestBody, MultiMap requestHeaders, MATC.HttpResponseSender responseSenderClbk) {
+    		
+    		HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+	                .uri(URI.create(url))
+	                .method(method, requestBody != null ? HttpRequest.BodyPublishers.ofByteArray(requestBody.getBytes()) : HttpRequest.BodyPublishers.noBody());
+
+    		// copy all headers except the restricted ones (these should be auto-completed by the java network library)
+	        for (Map.Entry<String, String> entry : requestHeaders) {
+	            if (!REVERSE_PROXY_EXCLUDED_HEADERS.contains(entry.getKey().toLowerCase())) {
+	                requestBuilder.header(entry.getKey(), entry.getValue());
+	            }
+	        }
+
+	        // if you want additional header overwrites, place them in here like so (bellow
+	        //requestBuilder//.setHeader(first-header-key, first-header-value)
+	        //        .setHeader(second-header-key, second-header-value)
+
+	        HttpRequest outgoingRequest = requestBuilder.build();
+	        
+	        reverseProxyClient.sendAsync(outgoingRequest, HttpResponse.BodyHandlers.ofString())
+	                .thenApply(response -> {
+	                    if (response.statusCode() >= 200 && response.statusCode() < 300) {
+	                        return response.body();
+	                    } else {
+	                        throw new RuntimeException("Received an error status: " + response.statusCode());
+	                    }
+	                })
+	                .thenAccept(responseBody -> {
+	                    //System.out.println("Response received: " + responseBody);
+	                	//routingContext.response().setStatusCode(200).end(responseBody);
+	                	responseSenderClbk.sendHttpResponse(200, responseBody);
+	                })
+	                .exceptionally(e -> {
+	                    System.out.println("Error: " + e.getMessage());
+	                    //routingContext.response().setStatusCode(500).end(e.getMessage());
+	                    responseSenderClbk.sendHttpResponse(500, e.getMessage() != null ? e.getMessage() : "internal server error");
+	                    return null;
+	                });		    		
+    	}
+    };
 	
 	@Override
 	public void start() {
@@ -111,6 +193,61 @@ public class MATC extends AbstractVerticle {
 		initNotification(router);
 		initLibrary(router);
 		initBus();
+		
+
+		try {
+			mvvmServersInfoProvider = new MvvmServersInfoProvider(config);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		router.route("/mvvm/download/:mvvm_repo_name/*").handler(routingContext -> {
+			// Get the HTTP request
+		    HttpServerRequest request = routingContext.request();
+		
+		    // Get mvvm_name from the path
+		    String mvvmRepoName = request.getParam("mvvm_repo_name");
+		
+		    // Get other servlets from the path
+		    String otherServlets = request.path().substring(request.path().indexOf(mvvmRepoName) + mvvmRepoName.length());
+		
+		    // Use a specific service to get the server's URL from mvvm_name
+		    String serverUrl = mvvmServersInfoProvider.getDownloaderServerUrl();
+		
+		    // Construct the new URL
+		    String newUrl = serverUrl + otherServlets + "?runtimes_root_path=" + mvvmRepoName + "/resources";
+			    
+		    // only GET s
+		    redirector.redirect(newUrl, "get", null, request.headers(), (status, responseBody) -> routingContext.response().setStatusCode(status).end(responseBody));
+		});
+
+		// proxy-ing project specific api-gateway queries to the right (dynamically instantiated by the backend's apigateway servers-pool) server 
+		router.route("/mvvm/apigateway/:mvvm_repo_name/*").handler(routingContext -> {
+		
+		    // Get the HTTP request
+		    HttpServerRequest request = routingContext.request();
+		
+		    // Get mvvm_name from the path
+		    String mvvmRepoName = request.getParam("mvvm_repo_name");
+		
+		    // Get other servlets from the path
+		    String otherServlets = request.path().substring(request.path().indexOf(mvvmRepoName) + mvvmRepoName.length());
+		
+		    // Use a specific service to get the server's URL from mvvm_name
+		    String serverUrl = mvvmServersInfoProvider.getApiGatewayServerUrl(mvvmRepoName);
+		
+		    // Construct the new URL
+		    String newUrl = serverUrl + otherServlets;
+		
+		    if (request.rawMethod().toLowerCase() == "post" || request.rawMethod().toLowerCase() == "put") {
+		        request.bodyHandler(body -> {
+		        	redirector.redirect(newUrl, request.rawMethod(), body, request.headers(), (status, responseBody) -> routingContext.response().setStatusCode(status).end(responseBody));
+		        });
+		    } else {
+		    	redirector.redirect(newUrl, request.rawMethod(), null, request.headers(), (status, responseBody) -> routingContext.response().setStatusCode(status).end(responseBody));
+		    }
+		
+		});
 
 
 		HttpServerOptions options = new HttpServerOptions()
