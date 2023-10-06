@@ -9,3 +9,9 @@ matc.iml
 /matc_keycloak.conf
 /.metadata/
 /bin/
+.classpath
+.project
+.settings/
+runtimes/
+src/main/java/log4j2.xml.bkp
+src/main/resources/log4j2.xml
