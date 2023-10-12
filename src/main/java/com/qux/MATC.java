@@ -201,7 +201,7 @@ public class MATC extends AbstractVerticle {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		router.route("/mvvm/download/:mvvm_repo_name/*").handler(routingContext -> {
+		router.route("/rest/mvvm/download/:mvvm_repo_name/*").handler(routingContext -> {
 			// Get the HTTP request
 		    HttpServerRequest request = routingContext.request();
 		
@@ -220,9 +220,30 @@ public class MATC extends AbstractVerticle {
 		    // only GET s
 		    redirector.redirect(newUrl, "get", null, request.headers(), (status, responseBody) -> routingContext.response().setStatusCode(status).end(responseBody));
 		});
+		
+		router.route("/rest/mvvm/business-code-download/:mvvm_repo_name/*").handler(routingContext -> {
+			// Get the HTTP request
+		    HttpServerRequest request = routingContext.request();
+		
+		    // Get mvvm_name from the path
+		    String mvvmRepoName = request.getParam("mvvm_repo_name");
+		
+		    // Get other servlets from the path
+		    String otherServlets = request.path().substring(request.path().indexOf(mvvmRepoName) + mvvmRepoName.length());
+		
+		    // Use a specific service to get the server's URL from mvvm_name
+		    String serverUrl = mvvmServersInfoProvider.getDownloaderServerUrl();
+		
+		    // Construct the new URL
+		    String newUrl = serverUrl + otherServlets + "?runtimes_root_path=" + mvvmRepoName + "/business-logic";
+			    
+		    // only GET s
+		    redirector.redirect(newUrl, "get", null, request.headers(), (status, responseBody) -> routingContext.response().setStatusCode(status).end(responseBody));
+		});
 
+		
 		// proxy-ing project specific api-gateway queries to the right (dynamically instantiated by the backend's apigateway servers-pool) server 
-		router.route("/mvvm/apigateway/:mvvm_repo_name/*").handler(routingContext -> {
+		router.route("/rest/mvvm/apigateway/:mvvm_repo_name/*").handler(routingContext -> {
 		
 		    // Get the HTTP request
 		    HttpServerRequest request = routingContext.request();
